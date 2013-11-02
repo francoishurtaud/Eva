@@ -1,0 +1,745 @@
+// Include Libraries
+
+  #include <SPI.h>         
+  #include <WiFi.h>
+  #include <WiFiUdp.h>
+  #include <HttpClient.h>
+  #include <Xively.h>
+  #include <TimerOne.h>
+  #include <DHT22.h>           //Humidity & TemperatureSensor
+  #include <OneWire.h>         //LCD
+
+// Init Sensors
+
+  #define DHT22_PIN 40          //Humidity & TemperatureSensor
+  #define PUMP_PWM_HIGH 50
+  #define PUMP_PWM_LOW 0
+  #define LIGHT_PIN 1
+  #define moisturePin 2
+  #define DS18S20_Pin 22
+
+  DHT22 myDHT22(DHT22_PIN);    // Setup a DHT22 instance
+  OneWire ds(DS18S20_Pin);     // TempWaterSensor
+
+  int motorPin= 2;             // Servo Aquarium
+  int lightPercentMoisture;
+
+// Xively Init
+    
+    // Xively key to let upload data
+    char xivelyKey[] = "WqwUBrLBDF2I4hfiri8qehBGNowzpt6KFwUlTn0xTOZ3Q8Mm";
+    
+    // Wively feed ID
+    #define xivelyFeed 5408595
+
+    // Datastreams
+    char Temperature_Room_ID[] = "Temperature_Room";
+    char Temperature_Water_ID[] = "Temperature_Water";
+    char Humidity_ID[] = "Humidity";
+    char Moisture_ID[] = "Moisture";
+    char Lighting_ID[] = "Lighting";
+    char pH_ID[] = "pH";
+    char ORP_ID[] = "ORP";
+
+    // Define the strings for our datastream IDs
+    XivelyDatastream datastreams[] = {
+      XivelyDatastream(Temperature_Room_ID, strlen(Temperature_Room_ID), DATASTREAM_FLOAT),
+      XivelyDatastream(Temperature_Water_ID, strlen(Temperature_Water_ID), DATASTREAM_FLOAT),
+      XivelyDatastream(Humidity_ID, strlen(Humidity_ID), DATASTREAM_FLOAT),
+      XivelyDatastream(Moisture_ID, strlen(Moisture_ID), DATASTREAM_FLOAT),
+      XivelyDatastream(Lighting_ID, strlen(Lighting_ID), DATASTREAM_FLOAT),
+      XivelyDatastream(pH_ID, strlen(pH_ID), DATASTREAM_FLOAT),
+      XivelyDatastream(ORP_ID, strlen(ORP_ID), DATASTREAM_FLOAT),
+    };
+
+    // Finally, wrap the datastreams into a feed
+    XivelyFeed feed(xivelyFeed, datastreams, 7 /* number of datastreams */);
+    WiFiClient client;
+    XivelyClient xivelyclient(client);
+
+// RGB Strip Init
+
+    /* 
+     dim_curve 'lookup table' to compensate for the nonlinearity of human vision.
+     Used in the getRGB function on saturation and brightness to make 'dimming' look more natural. 
+     Exponential function used to create values below : 
+     x from 0 - 255 : y = round(pow( 2.0, x+64/40.0) - 1)   
+     */
+
+    const byte dim_curve[] = {
+      0,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,
+      3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,   4,
+      4,   4,   4,   5,   5,   5,   5,   5,   5,   5,   5,   5,   5,   6,   6,   6,
+      6,   6,   6,   6,   6,   7,   7,   7,   7,   7,   7,   7,   8,   8,   8,   8,
+      8,   8,   9,   9,   9,   9,   9,   9,   10,  10,  10,  10,  10,  11,  11,  11,
+      11,  11,  12,  12,  12,  12,  12,  13,  13,  13,  13,  14,  14,  14,  14,  15,
+      15,  15,  16,  16,  16,  16,  17,  17,  17,  18,  18,  18,  19,  19,  19,  20,
+      20,  20,  21,  21,  22,  22,  22,  23,  23,  24,  24,  25,  25,  25,  26,  26,
+      27,  27,  28,  28,  29,  29,  30,  30,  31,  32,  32,  33,  33,  34,  35,  35,
+      36,  36,  37,  38,  38,  39,  40,  40,  41,  42,  43,  43,  44,  45,  46,  47,
+      48,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,
+      63,  64,  65,  66,  68,  69,  70,  71,  73,  74,  75,  76,  78,  79,  81,  82,
+      83,  85,  86,  88,  90,  91,  93,  94,  96,  98,  99,  101, 103, 105, 107, 109,
+      110, 112, 114, 116, 118, 121, 123, 125, 127, 129, 132, 134, 136, 139, 141, 144,
+      146, 149, 151, 154, 157, 159, 162, 165, 168, 171, 174, 177, 180, 183, 186, 190,
+      193, 196, 200, 203, 207, 211, 214, 218, 222, 226, 230, 234, 238, 242, 248, 255,
+    };
+
+    const int AqualedPinR   = 11;  // pwm pin with red led
+    const int AqualedPinG   = 10; // pwm pin with green led
+    const int AqualedPinB   = 9; // pwm pin with blue led
+    const int GardenledPinR   = 6;  // pwm pin with red led
+    const int GardenledPinG   = 5; // pwm pin with green led
+    const int GardenledPinB   = 3; // pwm pin with blue led
+
+    // getRGB function stores RGB values in this array
+    int rgb_colors[3]; 
+    int hueGrd;
+    int saturationGrd;
+    int brightnessGrd;
+    int hueAqua;
+    int saturationAqua;
+    int brightnessAqua;
+    int SensorLightMap;
+    int coloursTimeMap;
+    long saturationFade;
+
+// Wifi Init Strip
+
+    int status = WL_IDLE_STATUS;
+    char ssid[] = "carrielim";  //  your network SSID (name)
+    char pass[] = "92258717";       // your network password
+    //int keyIndex = 0;            // your network key Index number (needed only for WEP)
+
+    unsigned int localPort = 2390;      // local port to listen for UDP packets
+    IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server //UTC:129, 6, 15, 28 //HK: 137.189.6.18
+    const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
+    byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets 
+    WiFiServer server(80);
+
+// UDP Init
+  // A UDP instance to let us send and receive packets over UDP
+  WiFiUDP Udp;
+
+  long Minute;
+  long Hour;
+  int Second;
+  unsigned long epoch;
+
+// Serial Set Up for pH and ORP
+  
+  String inputstringORP = "";
+  String sensorstringORP = "";
+  boolean input_stringcompleteORP = false;
+  boolean sensor_stringcompleteORP = false;
+
+  String inputstringpH = "";
+  String sensorstringpH = "";
+  boolean input_stringcompletepH = false;
+  boolean sensor_stringcompletepH = false;
+
+void setup() 
+{
+  // Open serial communications and wait for port to open
+
+    Serial.begin(38400);
+    Serial2.begin(38400);
+    inputstringORP.reserve(5);
+    sensorstringORP.reserve(30);
+
+    Serial3.begin(38400);
+    inputstringpH.reserve(5);
+    sensorstringpH.reserve(30);
+
+  // Define Pins
+
+    pinMode(3, OUTPUT);
+    pinMode(5, OUTPUT);
+    pinMode(6, OUTPUT);
+    pinMode(9, OUTPUT);
+    pinMode(10, OUTPUT);
+    pinMode(11, OUTPUT);
+
+  // Wifi Connection
+
+    while (!Serial) {
+      ; // wait for serial port to connect. Needed for Leonardo only
+    }
+
+    // check for the presence of the shield:
+    if (WiFi.status() == WL_NO_SHIELD) {
+      Serial.println("WiFi shield not present"); 
+      // don't continue:
+      while(true);
+    } 
+
+    String fv = WiFi.firmwareVersion();
+    if( fv != "1.1.0" )
+      Serial.println("Please upgrade the firmware");
+
+    // attempt to connect to Wifi network:
+    while ( status != WL_CONNECTED) { 
+      Serial.print("Attempting to connect to SSID: ");
+      Serial.println(ssid);
+      // Connect to WPA/WPA2 network. Change this line if using open or WEP network:    
+      status = WiFi.begin(ssid, pass);
+      
+      server.begin();
+
+      // wait 10 seconds for connection:
+      delay(10000);
+    }
+
+    Serial.println("Connected to wifi");
+    printWifiStatus();
+
+  // Fetch Time From Server
+
+    Serial.println("\nStarting connection to server...");
+    Udp.begin(localPort);
+    
+    sendNTPpacket(timeServer); // send an NTP packet to a time server
+      // wait to see if a reply is available
+    delay(1000);  
+    Serial.println( Udp.parsePacket() );
+    if ( Udp.parsePacket() ) { 
+      Serial.println("packet received"); 
+      // We've received a packet, read the data from it
+      Udp.read(packetBuffer,NTP_PACKET_SIZE);  // read the packet into the buffer
+
+      //the timestamp starts at byte 40 of the received packet and is four bytes,
+      // or two words, long. First, esxtract the two words:
+
+      unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+      unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);  
+      // combine the four bytes (two words) into a long integer
+      // this is NTP time (seconds since Jan 1 1900):
+      unsigned long secsSince1900 = highWord << 16 | lowWord;  
+      Serial.print("Seconds since Jan 1 1900 = " );
+      Serial.println(secsSince1900);               
+
+      // now convert NTP time into everyday time:
+      Serial.print("Unix time = ");
+      // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+      const unsigned long seventyYears = 2208988800UL;     
+      // subtract seventy years:
+      epoch = secsSince1900 - seventyYears + 28800;  // +28800 for Hong Kong  http://www.epochconverter.com/epoch/timezones.php
+      // print Unix time:
+      Serial.println(epoch);                               
+
+      // print the hour, minute and second:
+        
+      Serial.print("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
+      Serial.print((epoch % 86400L/3600)); // print the hour (86400 equals secs per day)
+      Serial.print(':');  
+      if ( ((epoch % 3600) / 60) < 10 ) {
+        // In the first 10 minutes of each hour, we'll want a leading '0'
+        Serial.print('0');
+      }
+      Serial.print((epoch  % 3600) / 60); // print the minute (3600 equals secs per minute)
+      Serial.print(':'); 
+      if ( (epoch % 60) < 10 ) {
+        // In the first 10 seconds of each minute, we'll want a leading '0'
+        Serial.print('0');
+      }
+      Serial.println(epoch %60); // print the second
+    }
+
+    // wait 5 seconds for connection:
+    delay(5000);
+    
+  // Time Routine
+  
+    Timer1.initialize(100000); // set a timer of length 100000 microseconds (or 0.1 sec - or 10Hz)
+    Timer1.attachInterrupt( timerIsr ); // attach the service routine here
+
+}
+
+void loop()
+{
+  
+  // Print Time
+
+    Serial.print("epoch time is ");
+    Serial.print(epoch);
+    Serial.print("");
+    Serial.print("s"); 
+
+  // Read ORP
+
+    if (sensor_stringcompleteORP){
+        Serial.println(sensorstringORP);
+        sensorstringORP = "";
+        sensor_stringcompleteORP = false;
+      }
+
+    float ORP = Serial2.parseFloat();
+    ORP = constrain (ORP, 0, 800);
+ 
+  // Read pH
+
+    if (sensor_stringcompletepH){
+        Serial.println(sensorstringpH);
+        sensorstringpH = "";
+        sensor_stringcompletepH = false;
+      }
+    float pH = Serial3.parseFloat();
+    //pH = constrain (ORP, 0, 14);
+
+  // Read Water Temperature
+
+    float temperature = getTemp();
+ 
+  // Read lightsensor
+
+    analogReference(DEFAULT);
+    int lightReading = analogRead(LIGHT_PIN);      // read the light
+    float lightPercent = lightReading / 1024.0 * 100;    // calculate the lightPercentage
+    lightPercent = 100-floor(lightPercent*100) / 100; // round to two decimals
+
+  // Read Humidity
+
+    DHT22_ERROR_t errorCode;
+
+    Serial.print("Requesting data...");
+    errorCode = myDHT22.readData();
+    if(errorCode == DHT_ERROR_NONE)
+    {
+      Serial.print("Got Data ");
+      Serial.print(myDHT22.getTemperatureC());
+      Serial.print("C");
+      Serial.print(myDHT22.getHumidity());
+      Serial.println("%");
+    }
+    else
+    {
+      Serial.print("Error Code ");
+      Serial.print(errorCode);
+      Serial.println(" readData Failed");
+    }
+
+  // Read Moisture
+
+    int mostureReading = analogRead(moisturePin);      // read the moisture sensor
+    lightPercentMoisture = map (mostureReading, 350, 1024, 0, 100);
+
+  // Get Time
+
+    Hour = ((epoch % 86400L / 3600));
+    Hour = constrain (Hour, 0, 23);
+    Minute = ((epoch % 3600 / 60));
+    Minute = constrain (Minute, 0, 59);
+    Second = ( epoch % 60);
+    Second = constrain (Second, 0, 59);
+    
+    Serial.println();
+    
+    Serial.println("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
+      Serial.print(Hour); // print the hour (86400 equals secs per day)
+      Serial.print(':');  
+      if ( Minute < 10 ) {
+        // In the first 10 minutes of each hour, we'll want a leading '0'
+        Serial.print('0');
+      }
+      Serial.print(Minute); // print the minute (3600 equals secs per minute)
+      Serial.print(':'); 
+      if ( Second < 10 ) {
+        // In the first 10 seconds of each minute, we'll want a leading '0'
+        Serial.print('0');
+      }
+      Serial.println(epoch % 60); // print the second
+    
+  // listen for incoming clients
+  
+    WiFiClient client = server.available();
+    if (client) {
+      Serial.println("new client");
+      // an http request ends with a blank line
+      boolean currentLineIsBlank = true;
+      while (client.connected()) {
+        if (client.available()) {
+          char c = client.read();
+          Serial.write(c);
+          // if you've gotten to the end of the line (received a newline
+          // character) and the line is blank, the http request has ended,
+          // so you can send a reply
+          if (c == '\n' && currentLineIsBlank) {
+            // send a standard http response header
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-Type: application/json;charset=utf-8");
+            client.println("Server: Arduino");
+            client.println("Connnection: close");
+            client.println();
+            
+            client.print("{\"arduino\":[{\"location\":\"indoor\",\"celsius\":\"");
+            client.print(getTemp());
+            client.print("\"},");
+            client.print("{\"location\":\"outdoor\",\"celsius\":\"");
+            client.print(myDHT22.getTemperatureC());
+            client.print("\"},");
+            //client.print("{\"airHumidity\":\"");
+            //client.print(myDHT22.getHumidity());
+
+            client.print("\"}]}");
+            client.println();
+            break;
+          }
+
+          if (c == '\n') {
+            // you're starting a new line
+            currentLineIsBlank = true;
+          } 
+          else if (c != '\r') {
+            // you've gotten a character on the current line
+            currentLineIsBlank = false;
+          }
+        }
+      }
+      // give the web browser time to receive the data
+      delay(1);
+      
+      // close the connection:
+      client.stop();
+      Serial.println("client disonnected");
+    }
+
+  // Trigger Servo Aquarium
+  
+    if ((Hour > 8 && Hour < 20) &&         // if Hours are between 9am and 9pm
+    ((Minute >= 10 && Minute <= 20)  || (Minute >= 30 && Minute <= 40) || (Minute >= 50)))       // or 50 and 00
+    
+    {analogWrite(motorPin,PUMP_PWM_HIGH);}  // then turn on the pump
+    
+    else {
+    analogWrite(motorPin,PUMP_PWM_LOW);
+    }
+
+  // Trigger LEDs Garden
+  
+    // set HSB values
+    SensorLightMap = map(GetLightRaw(LIGHT_PIN), 0, 1023, 0, 255);      //map the lightsensor from 0 to 255
+    saturationFade = map(Minute,0,60,0,255);
+    
+    // 7am to 8am - Red to White
+    if(Hour == 7) {
+     hueGrd        = map(Minute, 0, 59, 0, 60);             // hue is a number between 0 and 360
+     saturationGrd = map(saturationFade, 255,0,255,0);      // saturation is a number between 0 - 255
+     brightnessGrd = SensorLightMap;                        // value is a number between 0 - 255
+    }
+    
+    // 8am to 8pm - White
+    else if(Hour >= 8 && Hour <= 19) {
+     hueGrd        = 55;                                      
+     saturationGrd = 0;                                       
+     brightnessGrd = 255;                                     
+    }
+    
+    // 8pm to 9pm - White to Red
+    else if(Hour == 20) {
+     hueGrd        = map(coloursTimeMap, 0, 255, 60, 0);
+     saturationGrd = map(saturationFade, 255,0,0,255);
+     brightnessGrd = SensorLightMap;
+    }
+    
+    // 9pm to 7am - Off
+    else {
+     hueAqua        = 0;
+     saturationAqua = 0;
+     brightnessAqua = 0;
+    }
+
+    // converts HSB to RGB
+    getRGB (hueGrd,saturationGrd,brightnessGrd,rgb_colors);   
+    analogWrite(GardenledPinR, rgb_colors[0]);               // red value in index 0 of rgb_colors array
+    analogWrite(GardenledPinG, rgb_colors[1]);               // green value in index 1 of rgb_colors array
+    analogWrite(GardenledPinB, rgb_colors[2]);               // blue value in index 2 of rgb_colors array
+
+  // Trigger LEDs Aquarium
+
+   // 7am to 8am - Purple to White
+    if(Hour == 7) {
+     hueAqua        = 280;                                     // hue is a number between 0 and 360
+     saturationAqua = map(saturationFade, 255,0,255,0);        // saturation is a number between 0 - 255
+     brightnessAqua = SensorLightMap;                          // value is a number between 0 - 255
+    }
+   
+   // 8am to 8pm - White
+    else if(Hour > 8 && Hour <= 19) {
+     hueAqua        = 55;                                      
+     saturationAqua = 0;                                       
+     brightnessAqua = 255;                                     
+    }
+    
+   //8pm to 9pm - White to Purple
+    else if(Hour == 20) {
+     hueAqua        = 280 ;        
+     saturationAqua = map(saturationFade, 255,0,0,255);        
+     brightnessAqua = SensorLightMap;                                     
+    }
+    
+   //9pm to 7am - Purple 
+     else {
+     hueAqua        = 0 ;                                    
+     saturationAqua = 0;        
+     brightnessAqua = 0;                                     
+    }
+    
+    getRGB (hueAqua,saturationAqua,brightnessAqua,rgb_colors);    // converts HSB to RGB
+    analogWrite(AqualedPinR, rgb_colors[0]);                      // red value in index 0 of rgb_colors array
+    analogWrite(AqualedPinG, rgb_colors[1]);                      // green value in index 1 of rgb_colors array
+    analogWrite(AqualedPinB, rgb_colors[2]); 
+ 
+  // Push To Xively
+  
+    //read sensor values
+    datastreams[0].setFloat(myDHT22.getTemperatureC());
+    datastreams[1].setFloat(getTemp());
+    datastreams[2].setFloat(myDHT22.getHumidity());
+    datastreams[3].setFloat(lightPercentMoisture);
+    datastreams[4].setFloat(lightPercent);
+    datastreams[5].setFloat(pH);
+    datastreams[6].setFloat(ORP);
+   
+    //print the sensor valye
+    Serial.print("airTemp : ");
+    Serial.println(datastreams[0].getFloat());
+    Serial.print("waterTemp : ");
+    Serial.println(datastreams[1].getFloat());
+    Serial.print("Humidity : ");
+    Serial.println(datastreams[2].getFloat());
+    Serial.print("Moisture : ");
+    Serial.println(datastreams[3].getFloat());
+    Serial.print("Lighting : ");
+    Serial.println(datastreams[4].getFloat());
+    Serial.print("pH : ");
+    Serial.println(datastreams[5].getFloat());
+    Serial.print("ORP : ");
+    Serial.println(datastreams[6].getFloat());
+
+    //send value to xively
+    Serial.println("Uploading it to Xively");
+    int ret = xivelyclient.put(feed, xivelyKey);
+    //return message
+    Serial.print("xivelyclient.put returned ");
+    Serial.println(ret);
+    Serial.println("");
+
+  delay(10000);
+
+}
+
+/////////////////////////////////////////////////////////////
+
+// sendNTPpacket
+
+  // send an NTP request to the time server at the given address 
+  unsigned long sendNTPpacket(IPAddress& address)
+  {
+    //Serial.println("1");
+    // set all bytes in the buffer to 0
+    memset(packetBuffer, 0, NTP_PACKET_SIZE); 
+    // Initialize values needed to form NTP request
+    // (see URL above for details on the packets)
+    //Serial.println("2");
+    packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+    packetBuffer[1] = 0;     // Stratum, or type of clock
+    packetBuffer[2] = 6;     // Polling Interval
+    packetBuffer[3] = 0xEC;  // Peer Clock Precision
+    // 8 bytes of zero for Root Delay & Root Dispersion
+    packetBuffer[12]  = 49; 
+    packetBuffer[13]  = 0x4E;
+    packetBuffer[14]  = 49;
+    packetBuffer[15]  = 52;
+    
+    //Serial.println("3");
+
+    // all NTP fields have been given values, now
+    // you can send a packet requesting a timestamp:       
+    Udp.beginPacket(address, 123); //NTP requests are to port 123
+    //Serial.println("4");
+    Udp.write(packetBuffer,NTP_PACKET_SIZE);
+    //Serial.println("5");
+    Udp.endPacket(); 
+    //Serial.println("6");
+  }
+
+// printWifiStatus
+
+  void printWifiStatus() {
+    // print the SSID of the network you're attached to:
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+
+    // print your WiFi shield's IP address:
+    IPAddress ip = WiFi.localIP();
+    Serial.print("IP Address: ");
+    Serial.println(ip);
+
+    // print the received signal strength:
+    long rssi = WiFi.RSSI();
+    Serial.print("signal strength (RSSI):");
+    Serial.print(rssi);
+    Serial.println(" dBm");
+  }
+
+// Custom ISR Timer Routine
+
+  void timerIsr()
+  {
+      // Toggle LED
+   epoch = epoch+1;
+   //Serial.println ("epoch = epoch+1");
+   
+   }
+
+// getRGB
+
+  void getRGB(int hue, int sat, int val, int colors[3]) { 
+    /* convert hue, saturation and brightness ( HSB/HSV ) to RGB
+       The dim_curve is used only on brightness/value and on saturation (inverted).
+       This looks the most natural.      
+    */
+
+    val = dim_curve[val];
+    sat = 255-dim_curve[255-sat];
+
+    int r;
+    int g;
+    int b;
+    int base;
+
+    if (sat == 0) { // Acromatic color (gray). Hue doesn't mind.
+      colors[0]=val;
+      colors[1]=val;
+      colors[2]=val;  
+    } else  { 
+
+      base = ((255 - sat) * val)>>8;
+
+      switch(hue/60) {
+      case 0:
+          r = val;
+          g = (((val-base)*hue)/60)+base;
+          b = base;
+      break;
+
+      case 1:
+          r = (((val-base)*(60-(hue%60)))/60)+base;
+          g = val;
+          b = base;
+      break;
+
+      case 2:
+          r = base;
+          g = val;
+          b = (((val-base)*(hue%60))/60)+base;
+      break;
+
+      case 3:
+          r = base;
+          g = (((val-base)*(60-(hue%60)))/60)+base;
+          b = val;
+      break;
+
+      case 4:
+          r = (((val-base)*(hue%60))/60)+base;
+          g = base;
+          b = val;
+      break;
+
+      case 5:
+          r = val;
+          g = base;
+          b = (((val-base)*(60-(hue%60)))/60)+base;
+      break;
+      }
+
+      colors[0]=r;
+      colors[1]=g;
+      colors[2]=b; 
+    }   
+  }
+
+// GetLightRaw
+
+  int GetLightRaw (int myLightPin)
+
+  {
+
+  float lightvalue;
+    analogReference(DEFAULT);
+    lightvalue = analogRead(LIGHT_PIN) ;    // calculate the lightPercentage
+
+  return(lightvalue);  
+  }
+
+// GetLightPercent
+
+  float GetLightPercent(int myLightPin)
+  {
+    float lightPrct;
+      lightPrct = GetLightRaw (myLightPin) / 1024.0 * 100;    // calculate the lightPercentage
+      lightPrct = 100-floor(lightPrct*100) / 100; // round to two decimals
+
+    return(lightPrct);  
+
+  }
+
+// DS18B20 Float
+ 
+  float getTemp(){
+    //returns the temperature from one DS18S20 in DEG Celsius
+
+    byte data[12];
+    byte addr[8];
+
+    if ( !ds.search(addr)) {
+      //no more sensors on chain, reset search
+      ds.reset_search();
+      return -1000;
+    }
+
+    if ( OneWire::crc8( addr, 7) != addr[7]) {
+      Serial.println("CRC is not valid!");
+      return -1000;
+    }
+
+    if ( addr[0] != 0x10 && addr[0] != 0x28) {
+      Serial.print("Device is not recognized");
+      return -1000;
+    }
+
+    ds.reset();
+    ds.select(addr);
+    ds.write(0x44,1); // start conversion, with parasite power on at the end
+
+    byte present = ds.reset();
+    ds.select(addr);    
+    ds.write(0xBE); // Read Scratchpad
+
+
+    for (int i = 0; i < 9; i++) { // we need 9 bytes
+      data[i] = ds.read();
+    }
+
+    ds.reset_search();
+
+    byte MSB = data[1];
+    byte LSB = data[0];
+
+    float tempRead = ((MSB << 8) | LSB); //using two's compliment
+    float TemperatureSum = tempRead / 16;
+
+    return TemperatureSum;
+
+  }
+
+
+
+
+
+
+
+
+
+
