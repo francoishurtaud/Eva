@@ -1,3 +1,7 @@
+# Untracked folder
+/idea
+/libraries
+
 # Compiled Object files
 *.slo
 *.lo
