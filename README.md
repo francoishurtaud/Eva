@@ -42,7 +42,8 @@ Light controller:
 #Tools
 
 Coded with SublimeText 3 with SublimeLinter, SublimeLinter-clang, SublimeLinter-annotations.
-Arduino IDE 1.0.5
+
+Uploaded onto Arduino with Arduino IDE 1.0.5
 
 #Team
 
