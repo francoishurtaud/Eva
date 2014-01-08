@@ -15,3 +15,9 @@
 *.lai
 *.la
 *.a
+
+# Dropbox stuff
+.dropbox
+
+# Windows ?
+desktop.ini
