@@ -50,3 +50,5 @@ Uploaded onto Arduino with Arduino IDE 1.0.5
 [@francoishurtaud](https://twitter.com/francoishurtaud)
 
 [@bnorus](https://twitter.com/bnorus)
+
+Fredistarr
