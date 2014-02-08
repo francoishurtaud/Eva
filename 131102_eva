@@ -417,72 +417,24 @@ void loop()
   // Trigger LEDs Garden
   
     // set HSB values
-    SensorLightMap = map(GetLightRaw(LIGHT_PIN), 0, 1023, 0, 255);      //map the lightsensor from 0 to 255
-    saturationFade = map(Minute,0,60,0,255);
+    //SensorLightMap = map(GetLightRaw(LIGHT_PIN), 0, 1023, 0, 255);      //map the lightsensor from 0 to 255
+    //saturationFade = map(Minute,0,60,0,255);
     
-    // 7am to 8am - Red to White
-    if(Hour == 7) {
-     hueGrd        = map(Minute, 0, 59, 0, 60);             // hue is a number between 0 and 360
-     saturationGrd = map(saturationFade, 255,0,255,0);      // saturation is a number between 0 - 255
-     brightnessGrd = SensorLightMap;                        // value is a number between 0 - 255
-    }
+     hueGrd        = 340;                                         // hue is a number between 0 and 360
+     saturationGrd = 255;                                         // saturation is a number between 0 - 255
+     brightnessGrd = 255;                                         // value is a number between 0 - 255
     
-    // 8am to 8pm - White
-    else if(Hour >= 8 && Hour <= 19) {
-     hueGrd        = 55;                                      
-     saturationGrd = 0;                                       
-     brightnessGrd = 255;                                     
-    }
-    
-    // 8pm to 9pm - White to Red
-    else if(Hour == 20) {
-     hueGrd        = map(coloursTimeMap, 0, 255, 60, 0);
-     saturationGrd = map(saturationFade, 255,0,0,255);
-     brightnessGrd = SensorLightMap;
-    }
-    
-    // 9pm to 7am - Off
-    else {
-     hueAqua        = 0;
-     saturationAqua = 0;
-     brightnessAqua = 0;
-    }
-
     // converts HSB to RGB
     getRGB (hueGrd,saturationGrd,brightnessGrd,rgb_colors);   
-    analogWrite(GardenledPinR, rgb_colors[0]);               // red value in index 0 of rgb_colors array
-    analogWrite(GardenledPinG, rgb_colors[1]);               // green value in index 1 of rgb_colors array
-    analogWrite(GardenledPinB, rgb_colors[2]);               // blue value in index 2 of rgb_colors array
+    analogWrite(GardenledPinR, rgb_colors[0]);                    // red value in index 0 of rgb_colors array
+    analogWrite(GardenledPinG, rgb_colors[1]);                    // green value in index 1 of rgb_colors array
+    analogWrite(GardenledPinB, rgb_colors[2]);                    // blue value in index 2 of rgb_colors array
 
   // Trigger LEDs Aquarium
 
-   // 7am to 8am - Purple to White
-    if(Hour == 7) {
-     hueAqua        = 280;                                     // hue is a number between 0 and 360
-     saturationAqua = map(saturationFade, 255,0,255,0);        // saturation is a number between 0 - 255
-     brightnessAqua = SensorLightMap;                          // value is a number between 0 - 255
-    }
-   
-   // 8am to 8pm - White
-    else if(Hour > 8 && Hour <= 19) {
-     hueAqua        = 55;                                      
-     saturationAqua = 0;                                       
-     brightnessAqua = 255;                                     
-    }
-    
-   //8pm to 9pm - White to Purple
-    else if(Hour == 20) {
-     hueAqua        = 280 ;        
-     saturationAqua = map(saturationFade, 255,0,0,255);        
-     brightnessAqua = SensorLightMap;                                     
-    }
-    
-   //9pm to 7am - Purple 
-     else {
-     hueAqua        = 0 ;                                    
-     saturationAqua = 0;        
-     brightnessAqua = 0;                                     
-    }
+     hueAqua        = 280;                                        // hue is a number between 0 and 360
+     saturationAqua = 255;                                        // saturation is a number between 0 - 255
+     brightnessAqua = 255;                                        // value is a number between 0 - 255
     
     getRGB (hueAqua,saturationAqua,brightnessAqua,rgb_colors);    // converts HSB to RGB
     analogWrite(AqualedPinR, rgb_colors[0]);                      // red value in index 0 of rgb_colors array
