@@ -420,9 +420,21 @@ void loop()
     //SensorLightMap = map(GetLightRaw(LIGHT_PIN), 0, 1023, 0, 255);      //map the lightsensor from 0 to 255
     //saturationFade = map(Minute,0,60,0,255);
     
+     if (Hour > 21 && Hour < 23)
+
+     {
+     hueGrd        = 100;                                         // hue is a number between 0 and 360 // http://www.color-blindness.com/color-name-hue/
+     saturationGrd = 255;                                         // saturation is a number between 0 - 255
+     brightnessGrd = 255;
+     }
+
+     else {
+
      hueGrd        = 340;                                         // hue is a number between 0 and 360 // http://www.color-blindness.com/color-name-hue/
      saturationGrd = 255;                                         // saturation is a number between 0 - 255
-     brightnessGrd = 255;                                         // value is a number between 0 - 255
+     brightnessGrd = 255;
+
+     }                                         // value is a number between 0 - 255
     
     // converts HSB to RGB
     getRGB (hueGrd,saturationGrd,brightnessGrd,rgb_colors);   
